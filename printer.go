@@ -53,7 +53,8 @@ type Printer struct {
 	context context.Context
 	cancel  func()
 	queue   chan *job
-	port    int
+	addr    string
+	socket  net.Listener
 	group   sync.WaitGroup
 	jobs    sync.Map
 }
@@ -70,13 +71,45 @@ func CreatePrinter(queueSize, serverPort int) (*Printer, error) {
 		return nil, err
 	}
 
+	// create socket
+	socket, err := net.Listen("tcp", ":"+strconv.Itoa(serverPort))
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	// get port
+	_, port, err := net.SplitHostPort(socket.Addr().String())
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	// compute address
+	addr := "http://0.0.0.0:" + port
+
 	// prepare printer
 	p := &Printer{
 		context: ctx,
 		cancel:  cancel,
-		port:    serverPort,
+		addr:    addr,
+		socket:  socket,
 		queue:   make(chan *job, queueSize),
 	}
+
+	// run server
+	go func() {
+		// prepare server
+		server := &http.Server{
+			Handler: http.HandlerFunc(p.handler),
+		}
+
+		// serve
+		err := server.Serve(socket)
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			panic(err) // TODO: Handle.
+		}
+	}()
 
 	// run printer
 	p.group.Add(1)
@@ -133,41 +166,8 @@ func (p *Printer) process(job *job) ([]byte, error) {
 }
 
 func (p *Printer) run() {
-	// TODO: Remove panics and report errors.
-
-	// prepare server
-	server := &http.Server{
-		Handler: http.HandlerFunc(p.handler),
-	}
-
-	// create socket
-	sock, err := net.Listen("tcp", ":"+strconv.Itoa(p.port))
-	if err != nil {
-		panic(err)
-	}
-
-	// get port
-	_, port, err := net.SplitHostPort(sock.Addr().String())
-	if err != nil {
-		panic(err)
-	}
-
-	// compute address
-	addr := "http://0.0.0.0:" + port
-
-	// run server
-	go func() {
-		err := server.Serve(sock)
-		if err != nil && err != http.ErrServerClosed {
-			panic(err)
-		}
-	}()
-
-	// ensure closings
-	defer func() {
-		_ = server.Close()
-		p.group.Done()
-	}()
+	// ensure done
+	defer p.group.Done()
 
 	for {
 		// get job
@@ -189,7 +189,7 @@ func (p *Printer) run() {
 
 		// print url or file
 		if job.file != nil {
-			job.result, job.error = p.print(job.context, addr+"/"+id)
+			job.result, job.error = p.print(job.context, p.addr+"/"+id)
 		} else {
 			job.result, job.error = p.print(job.context, job.url)
 		}
@@ -290,10 +290,17 @@ func (p *Printer) Close() error {
 	// await exit
 	p.group.Wait()
 
+	// close socket
+	err1 := p.socket.Close()
+
 	// cancel context
-	err := chromedp.Cancel(p.context)
-	if err != nil {
-		return err
+	err2 := chromedp.Cancel(p.context)
+
+	// check error
+	if err1 != nil {
+		return err1
+	} else if err2 != nil {
+		return err2
 	}
 
 	return nil
