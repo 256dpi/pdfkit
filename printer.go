@@ -3,6 +3,8 @@ package pdfkit
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/256dpi/serve"
 	"github.com/chromedp/cdproto/log"
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
@@ -39,6 +42,7 @@ func (e *LogError) Error() string {
 
 type job struct {
 	context context.Context
+	secret  string
 	url     string
 	file    []byte
 	assets  map[string][]byte
@@ -103,7 +107,6 @@ func CreatePrinter(config Config) (*Printer, error) {
 	_, port, err := net.SplitHostPort(socket.Addr().String())
 	if err != nil {
 		return nil, err
-		return nil, err
 	}
 
 	// prepare printer
@@ -112,7 +115,6 @@ func CreatePrinter(config Config) (*Printer, error) {
 		cancel:  cancel,
 		socket:  socket,
 		addr:    "http://0.0.0.0:" + port,
-		secret:  hex.EncodeToString(secret),
 		queue:   make(chan *job, config.QueueSize),
 	}
 
@@ -168,6 +170,16 @@ func (p *Printer) process(job *job) ([]byte, error) {
 	// create done
 	job.done = make(chan struct{})
 
+	// read secret
+	secret := make([]byte, 16)
+	_, err := rand.Read(secret)
+	if err != nil {
+		return nil, err
+	}
+
+	// set secret
+	job.secret = hex.EncodeToString(secret)
+
 	// queue job
 	select {
 	case p.queue <- job:
@@ -209,9 +221,9 @@ func (p *Printer) run() {
 
 		// print url or file
 		if job.file != nil {
-			job.result, job.error = p.print(job.context, p.addr+"/"+id)
+			job.result, job.error = p.print(job.context, p.addr+"/"+id, job.secret)
 		} else {
-			job.result, job.error = p.print(job.context, job.url)
+			job.result, job.error = p.print(job.context, job.url, job.secret)
 		}
 
 		// delete job
@@ -222,7 +234,7 @@ func (p *Printer) run() {
 	}
 }
 
-func (p *Printer) print(ctx context.Context, url string) ([]byte, error) {
+func (p *Printer) print(ctx context.Context, url, secret string) ([]byte, error) {
 	// collect errors
 	var logErrors []string
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
@@ -236,6 +248,12 @@ func (p *Printer) print(ctx context.Context, url string) ([]byte, error) {
 	// render pdf
 	var buf []byte
 	err := chromedp.Run(ctx,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return network.SetCookie("secret", secret).
+				WithURL(p.addr).
+				WithHTTPOnly(true).
+				Do(ctx)
+		}),
 		chromedp.Navigate(url),
 		chromedp.WaitVisible("body"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -277,6 +295,13 @@ func (p *Printer) handler(w http.ResponseWriter, r *http.Request) {
 
 	// get job
 	job := value.(*job)
+
+	// check secret
+	cookie, _ := r.Cookie("secret")
+	if cookie == nil || cookie.Value != job.secret {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 
 	// write file if base
 	if len(path) == 1 {
