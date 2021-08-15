@@ -235,6 +235,13 @@ func (p *Printer) run() {
 }
 
 func (p *Printer) print(ctx context.Context, url, secret string) ([]byte, error) {
+	// create sub context
+	ctx, cancel := chromedp.NewContext(ctx)
+	defer cancel()
+	defer func() {
+		_ = chromedp.Cancel(ctx)
+	}()
+
 	// collect errors
 	var logErrors []string
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
@@ -277,6 +284,12 @@ func (p *Printer) print(ctx context.Context, url, secret string) ([]byte, error)
 	// handle log errors
 	if len(logErrors) > 0 {
 		return nil, &LogError{Lines: logErrors}
+	}
+
+	// cancel context
+	err = chromedp.Cancel(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	return buf, nil
