@@ -51,6 +51,7 @@ type job struct {
 // Config defines a printer configuration.
 type Config struct {
 	QueueSize      int
+	Concurrency    int
 	ServerPort     int
 	ServerReporter func(error)
 }
@@ -72,6 +73,8 @@ func CreatePrinter(config Config) (*Printer, error) {
 	// check config
 	if config.QueueSize < 0 {
 		return nil, fmt.Errorf("negative queue size")
+	} else if config.Concurrency <= 0 {
+		return nil, fmt.Errorf("negative or zero concurrency")
 	} else if config.ServerPort < 0 {
 		return nil, fmt.Errorf("negative server port")
 	}
@@ -128,8 +131,10 @@ func CreatePrinter(config Config) (*Printer, error) {
 	}()
 
 	// run printer
-	p.group.Add(1)
-	go p.run()
+	p.group.Add(config.Concurrency)
+	for i := 0; i < config.Concurrency; i++ {
+		go p.run()
+	}
 
 	// set flag
 	success = true

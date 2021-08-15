@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -19,8 +20,8 @@ func TestMain(m *testing.M) {
 
 func TestPrinterPrintURL(t *testing.T) {
 	printer, err := CreatePrinter(Config{
-		QueueSize:  1,
-		ServerPort: 0,
+		QueueSize:   1,
+		Concurrency: 1,
 		ServerReporter: func(err error) {
 			panic(err)
 		},
@@ -39,8 +40,8 @@ func TestPrinterPrintURL(t *testing.T) {
 
 func TestPrinterPrintFile(t *testing.T) {
 	printer, err := CreatePrinter(Config{
-		QueueSize:  1,
-		ServerPort: 0,
+		QueueSize:   1,
+		Concurrency: 1,
 		ServerReporter: func(err error) {
 			panic(err)
 		},
@@ -75,8 +76,8 @@ func TestPrinterPrintFileAssets(t *testing.T) {
 	assets := map[string][]byte{}
 
 	printer, err := CreatePrinter(Config{
-		QueueSize:  1,
-		ServerPort: 0,
+		QueueSize:   1,
+		Concurrency: 1,
 		ServerReporter: func(err error) {
 			panic(err)
 		},
@@ -113,6 +114,50 @@ func TestPrinterPrintFileAssets(t *testing.T) {
 	assert.NotEmpty(t, pdf)
 
 	write("assets.pdf", pdf)
+}
+
+func BenchmarkPrinter(b *testing.B) {
+	printer, err := CreatePrinter(Config{
+		QueueSize:   runtime.GOMAXPROCS(0),
+		Concurrency: runtime.GOMAXPROCS(0),
+		ServerReporter: func(err error) {
+			panic(err)
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer printer.Close()
+
+	file := []byte(`
+		<html>
+		<head>
+			<style>
+				@page {
+					size: A5 landscape;
+					margin: 0;
+				}
+			</style>
+		</head>
+		<body>
+			<h1>Hello World!</h1>
+		</body>
+		</html>
+	`)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_, err := printer.PrintFile(file, time.Minute, nil)
+			if err != nil {
+				panic(err)
+			}
+		}
+	})
+
+	b.StopTimer()
 }
 
 func write(name string, pdf []byte) {
