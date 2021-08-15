@@ -137,40 +137,7 @@ func (p *Printer) run() {
 
 	// prepare server
 	server := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// get path
-			path := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-
-			// get value
-			value, ok := p.jobs.Load(path[0])
-			if !ok {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-
-			// get job
-			job := value.(*job)
-
-			// write file if base
-			if len(path) == 1 {
-				w.Header().Set("Content-Type", "text/html")
-				_, _ = w.Write(job.file)
-				return
-			}
-
-			// get asset
-			asset := strings.Join(path[1:], "/")
-
-			// get asset
-			if job.assets == nil || job.assets[asset] == nil {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-
-			// write asset
-			w.Header().Set("Content-Type", serve.MimeTypeByExtension(filepath.Ext(asset), true))
-			_, _ = w.Write(job.assets[asset])
-		}),
+		Handler: http.HandlerFunc(p.handler),
 	}
 
 	// create socket
@@ -275,6 +242,41 @@ func (p *Printer) print(ctx context.Context, url string) ([]byte, error) {
 	}
 
 	return buf, nil
+}
+
+func (p *Printer) handler(w http.ResponseWriter, r *http.Request) {
+	// get path
+	path := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+
+	// get value
+	value, ok := p.jobs.Load(path[0])
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// get job
+	job := value.(*job)
+
+	// write file if base
+	if len(path) == 1 {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write(job.file)
+		return
+	}
+
+	// get asset
+	asset := strings.Join(path[1:], "/")
+
+	// get asset
+	if job.assets == nil || job.assets[asset] == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	// write asset
+	w.Header().Set("Content-Type", serve.MimeTypeByExtension(filepath.Ext(asset), true))
+	_, _ = w.Write(job.assets[asset])
 }
 
 // Close will close the printer.
