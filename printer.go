@@ -22,8 +22,6 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// TODO: Password protect server.
-
 // ErrQueueTimeout is returned if a job timed out while queueing.
 var ErrQueueTimeout = errors.New("queue timeout")
 
@@ -41,13 +39,13 @@ func (e *LogError) Error() string {
 
 type job struct {
 	context context.Context
+	done    chan struct{}
 	secret  string
 	url     string
 	file    []byte
 	assets  map[string][]byte
-	done    chan struct{}
-	error   error
 	result  []byte
+	error   error
 }
 
 // Config defines a printer configuration.
