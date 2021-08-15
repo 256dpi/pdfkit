@@ -47,6 +47,13 @@ type job struct {
 	result  []byte
 }
 
+// Config defines a printer configuration.
+type Config struct {
+	QueueSize      int
+	ServerPort     int
+	ServerReporter func(error)
+}
+
 // Printer prints web pages as PDFs.
 type Printer struct {
 	counter int64
@@ -60,7 +67,14 @@ type Printer struct {
 }
 
 // CreatePrinter will create a new printer.
-func CreatePrinter(queueSize, serverPort int) (*Printer, error) {
+func CreatePrinter(config Config) (*Printer, error) {
+	// check config
+	if config.QueueSize < 0 {
+		return nil, fmt.Errorf("negative queue size")
+	} else if config.ServerPort < 0 {
+		return nil, fmt.Errorf("negative server port")
+	}
+
 	// prepare context
 	ctx, cancel := chromedp.NewContext(context.Background())
 
@@ -72,7 +86,7 @@ func CreatePrinter(queueSize, serverPort int) (*Printer, error) {
 	}
 
 	// create socket
-	socket, err := net.Listen("tcp", ":"+strconv.Itoa(serverPort))
+	socket, err := net.Listen("tcp", ":"+strconv.Itoa(config.ServerPort))
 	if err != nil {
 		cancel()
 		return nil, err
@@ -94,20 +108,24 @@ func CreatePrinter(queueSize, serverPort int) (*Printer, error) {
 		cancel:  cancel,
 		addr:    addr,
 		socket:  socket,
-		queue:   make(chan *job, queueSize),
+		queue:   make(chan *job, config.QueueSize),
 	}
 
 	// run server
 	go func() {
-		// prepare server
-		server := &http.Server{
-			Handler: http.HandlerFunc(p.handler),
-		}
+		for {
+			// prepare server
+			server := &http.Server{
+				Handler: http.HandlerFunc(p.handler),
+			}
 
-		// serve
-		err := server.Serve(socket)
-		if err != nil && !errors.Is(err, net.ErrClosed) {
-			panic(err) // TODO: Handle.
+			// serve
+			err := server.Serve(socket)
+			if err != nil && errors.Is(err, net.ErrClosed) {
+				return
+			} else if err != nil && config.ServerReporter != nil {
+				config.ServerReporter(err)
+			}
 		}
 	}()
 

@@ -18,7 +18,13 @@ func TestMain(m *testing.M) {
 }
 
 func TestPrinterPrintURL(t *testing.T) {
-	printer, err := CreatePrinter(1, 0)
+	printer, err := CreatePrinter(Config{
+		QueueSize:  1,
+		ServerPort: 0,
+		ServerReporter: func(err error) {
+			panic(err)
+		},
+	})
 	assert.NoError(t, err)
 	assert.NotNil(t, printer)
 
@@ -32,7 +38,13 @@ func TestPrinterPrintURL(t *testing.T) {
 }
 
 func TestPrinterPrintFile(t *testing.T) {
-	printer, err := CreatePrinter(1, 0)
+	printer, err := CreatePrinter(Config{
+		QueueSize:  1,
+		ServerPort: 0,
+		ServerReporter: func(err error) {
+			panic(err)
+		},
+	})
 	assert.NoError(t, err)
 	assert.NotNil(t, printer)
 
@@ -62,7 +74,13 @@ func TestPrinterPrintFile(t *testing.T) {
 func TestPrinterPrintFileAssets(t *testing.T) {
 	assets := map[string][]byte{}
 
-	printer, err := CreatePrinter(1, 0)
+	printer, err := CreatePrinter(Config{
+		QueueSize:  1,
+		ServerPort: 0,
+		ServerReporter: func(err error) {
+			panic(err)
+		},
+	})
 	assert.NoError(t, err)
 	assert.NotNil(t, printer)
 
