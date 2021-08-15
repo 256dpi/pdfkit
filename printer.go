@@ -78,24 +78,31 @@ func CreatePrinter(config Config) (*Printer, error) {
 	// prepare context
 	ctx, cancel := chromedp.NewContext(context.Background())
 
+	// ensure cleanup
+	var success bool
+	defer func() {
+		if !success {
+			_ = chromedp.Cancel(ctx)
+			cancel()
+		}
+	}()
+
 	// allocate browser
 	err := chromedp.Run(ctx)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
 
 	// create socket
 	socket, err := net.Listen("tcp", ":"+strconv.Itoa(config.ServerPort))
 	if err != nil {
-		cancel()
 		return nil, err
 	}
 
 	// get port
 	_, port, err := net.SplitHostPort(socket.Addr().String())
 	if err != nil {
-		cancel()
+		return nil, err
 		return nil, err
 	}
 
@@ -105,6 +112,7 @@ func CreatePrinter(config Config) (*Printer, error) {
 		cancel:  cancel,
 		socket:  socket,
 		addr:    "http://0.0.0.0:" + port,
+		secret:  hex.EncodeToString(secret),
 		queue:   make(chan *job, config.QueueSize),
 	}
 
@@ -123,6 +131,9 @@ func CreatePrinter(config Config) (*Printer, error) {
 	// run printer
 	p.group.Add(1)
 	go p.run()
+
+	// set flag
+	success = true
 
 	return p, nil
 }
