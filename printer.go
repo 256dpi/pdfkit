@@ -55,6 +55,7 @@ type Printer struct {
 	queue   chan *job
 	port    int
 	group   sync.WaitGroup
+	jobs    sync.Map
 }
 
 // CreatePrinter will create a new printer.
@@ -132,9 +133,6 @@ func (p *Printer) process(job *job) ([]byte, error) {
 }
 
 func (p *Printer) run() {
-	// prepare jobs
-	var jobs sync.Map
-
 	// TODO: Remove panics and report errors.
 
 	// prepare server
@@ -144,7 +142,7 @@ func (p *Printer) run() {
 			path := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 
 			// get value
-			value, ok := jobs.Load(path[0])
+			value, ok := p.jobs.Load(path[0])
 			if !ok {
 				w.WriteHeader(http.StatusNotFound)
 				return
@@ -220,7 +218,7 @@ func (p *Printer) run() {
 		}
 
 		// store job
-		jobs.Store(id, job)
+		p.jobs.Store(id, job)
 
 		// print url or file
 		if job.file != nil {
@@ -230,7 +228,7 @@ func (p *Printer) run() {
 		}
 
 		// delete job
-		jobs.Delete(id)
+		p.jobs.Delete(id)
 
 		// signal done
 		close(job.done)
