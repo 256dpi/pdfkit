@@ -111,13 +111,7 @@ func CreatePrinter(config Config) (*Printer, error) {
 	// run server
 	go func() {
 		for {
-			// prepare server
-			server := &http.Server{
-				Handler: http.HandlerFunc(p.handler),
-			}
-
-			// serve
-			err := server.Serve(socket)
+			err := http.Serve(socket, http.HandlerFunc(p.handler))
 			if err != nil && errors.Is(err, net.ErrClosed) {
 				return
 			} else if err != nil && config.ServerReporter != nil {
