@@ -60,8 +60,8 @@ type Printer struct {
 	context context.Context
 	cancel  func()
 	queue   chan *job
-	addr    string
 	socket  net.Listener
+	addr    string
 	group   sync.WaitGroup
 	jobs    sync.Map
 }
@@ -99,15 +99,12 @@ func CreatePrinter(config Config) (*Printer, error) {
 		return nil, err
 	}
 
-	// compute address
-	addr := "http://0.0.0.0:" + port
-
 	// prepare printer
 	p := &Printer{
 		context: ctx,
 		cancel:  cancel,
-		addr:    addr,
 		socket:  socket,
+		addr:    "http://0.0.0.0:" + port,
 		queue:   make(chan *job, config.QueueSize),
 	}
 
