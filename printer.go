@@ -1,7 +1,6 @@
 package pdfkit
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -152,8 +151,7 @@ func (p *Printer) PrintURL(url string, timeout time.Duration) ([]byte, error) {
 	})
 }
 
-// PrintFile will print the provided file as a PDF. To access the provided
-// assets relatively, a <base> tag is injected after the <head> tag if available.
+// PrintFile will print the provided file and its assets as a PDF.
 func (p *Printer) PrintFile(file []byte, timeout time.Duration, assets map[string][]byte) ([]byte, error) {
 	// wrap context
 	ctx, cancel := context.WithTimeout(p.context, timeout)
@@ -211,19 +209,15 @@ func (p *Printer) run() {
 		// get id
 		id := strconv.Itoa(int(atomic.AddInt64(&p.counter, 1)))
 
-		// set base if available
-		if job.file != nil {
-			job.file = bytes.Replace(job.file, []byte(`<head>`), []byte(`<head><base href="/`+id+`/">`), 1)
-		}
-
 		// store job
 		p.jobs.Store(id, job)
 
 		// print url or file
-		if job.file != nil {
-			job.result, job.error = p.print(job.context, p.addr+"/"+id, job.secret)
+		if job.url != "" {
+			job.result, job.error = p.print(job.context, job.url, "")
 		} else {
-			job.result, job.error = p.print(job.context, job.url, job.secret)
+			data := id + "," + job.secret
+			job.result, job.error = p.print(job.context, p.addr, data)
 		}
 
 		// delete job
@@ -234,7 +228,7 @@ func (p *Printer) run() {
 	}
 }
 
-func (p *Printer) print(ctx context.Context, url, secret string) ([]byte, error) {
+func (p *Printer) print(ctx context.Context, url, data string) ([]byte, error) {
 	// create sub context
 	ctx, cancel := chromedp.NewContext(ctx)
 	defer cancel()
@@ -256,7 +250,10 @@ func (p *Printer) print(ctx context.Context, url, secret string) ([]byte, error)
 	var buf []byte
 	err := chromedp.Run(ctx,
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			return network.SetCookie("secret", secret).
+			if data == "" {
+				return nil
+			}
+			return network.SetCookie("pdfkit", data).
 				WithURL(p.addr).
 				WithHTTPOnly(true).
 				Do(ctx)
@@ -296,11 +293,22 @@ func (p *Printer) print(ctx context.Context, url, secret string) ([]byte, error)
 }
 
 func (p *Printer) handler(w http.ResponseWriter, r *http.Request) {
-	// get path
-	path := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	// get data
+	cookie, _ := r.Cookie("pdfkit")
+	if cookie == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	// split data
+	data := strings.Split(cookie.Value, ",")
+	if len(data) != 2 {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
 	// get value
-	value, ok := p.jobs.Load(path[0])
+	value, ok := p.jobs.Load(data[0])
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -310,31 +318,30 @@ func (p *Printer) handler(w http.ResponseWriter, r *http.Request) {
 	job := value.(*job)
 
 	// check secret
-	cookie, _ := r.Cookie("secret")
-	if cookie == nil || cookie.Value != job.secret {
+	if data[1] != job.secret {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	// write file if base
-	if len(path) == 1 {
+	// get path
+	path := strings.Trim(r.URL.Path, "/")
+
+	// write file if index
+	if path == "" {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write(job.file)
 		return
 	}
 
 	// get asset
-	asset := strings.Join(path[1:], "/")
-
-	// get asset
-	if job.assets == nil || job.assets[asset] == nil {
+	if job.assets == nil || job.assets[path] == nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	// write asset
-	w.Header().Set("Content-Type", serve.MimeTypeByExtension(filepath.Ext(asset), true))
-	_, _ = w.Write(job.assets[asset])
+	w.Header().Set("Content-Type", serve.MimeTypeByExtension(filepath.Ext(path), true))
+	_, _ = w.Write(job.assets[path])
 }
 
 // Close will close the printer.
