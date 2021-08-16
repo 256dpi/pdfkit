@@ -146,6 +146,12 @@ func TestPrinterClose(t *testing.T) {
 
 	<-done1
 	<-done2
+
+	_, err = printer.PrintURL("https://sternenbauer.com", time.Minute)
+	assert.Equal(t, ErrClosed, err)
+
+	err = printer.Close()
+	assert.Equal(t, ErrClosed, err)
 }
 
 func BenchmarkPrinter(b *testing.B) {
