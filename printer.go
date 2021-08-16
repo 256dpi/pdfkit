@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/256dpi/aside"
 	"github.com/256dpi/serve"
 	"github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/network"
@@ -50,10 +51,9 @@ type job struct {
 
 // Config defines a printer configuration.
 type Config struct {
-	QueueSize      int
-	Concurrency    int
-	ServerPort     int
-	ServerReporter func(error)
+	QueueSize   int
+	Concurrency int
+	ServerPort  int
 }
 
 // Printer prints web pages as PDFs.
@@ -62,7 +62,7 @@ type Printer struct {
 	context context.Context
 	cancel  func()
 	queue   chan *job
-	socket  net.Listener
+	server  *aside.Task
 	addr    string
 	group   sync.WaitGroup
 	jobs    sync.Map
@@ -75,7 +75,7 @@ func CreatePrinter(config Config) (*Printer, error) {
 		return nil, fmt.Errorf("negative queue size")
 	} else if config.Concurrency <= 0 {
 		return nil, fmt.Errorf("negative or zero concurrency")
-	} else if config.ServerPort < 0 {
+	} else if config.ServerPort <= 0 {
 		return nil, fmt.Errorf("negative server port")
 	}
 
@@ -97,38 +97,41 @@ func CreatePrinter(config Config) (*Printer, error) {
 		return nil, err
 	}
 
-	// create socket
-	socket, err := net.Listen("tcp", ":"+strconv.Itoa(config.ServerPort))
-	if err != nil {
-		return nil, err
-	}
-
-	// get port
-	_, port, err := net.SplitHostPort(socket.Addr().String())
-	if err != nil {
-		return nil, err
-	}
-
 	// prepare printer
 	p := &Printer{
 		context: ctx,
 		cancel:  cancel,
-		socket:  socket,
-		addr:    "http://0.0.0.0:" + port,
+		addr:    "http://0.0.0.0:" + strconv.Itoa(config.ServerPort),
 		queue:   make(chan *job, config.QueueSize),
 	}
 
-	// run server
-	go func() {
-		for {
-			err := http.Serve(socket, http.HandlerFunc(p.handler))
-			if err != nil && errors.Is(err, net.ErrClosed) {
-				return
-			} else if err != nil && config.ServerReporter != nil {
-				config.ServerReporter(err)
-			}
+	// prepare server
+	p.server = aside.New(func(cb func(func() error)) error {
+		// create socket
+		socket, err := net.Listen("tcp", ":"+strconv.Itoa(config.ServerPort))
+		if err != nil {
+			return err
 		}
-	}()
+
+		// signal
+		cb(func() error {
+			return socket.Close()
+		})
+
+		// serve requests
+		err = http.Serve(socket, http.HandlerFunc(p.handler))
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			return err
+		}
+
+		return nil
+	})
+
+	// verify server
+	_, err = p.server.Verify(true)
+	if err != nil {
+		return nil, err
+	}
 
 	// run printer
 	p.group.Add(config.Concurrency)
@@ -232,6 +235,12 @@ func (p *Printer) run() {
 }
 
 func (p *Printer) print(ctx context.Context, url, data string) ([]byte, error) {
+	// verify server
+	_, err := p.server.Verify(true)
+	if err != nil {
+		return nil, err
+	}
+
 	// create sub context
 	ctx, cancel := chromedp.NewContext(ctx)
 	defer cancel()
@@ -251,7 +260,7 @@ func (p *Printer) print(ctx context.Context, url, data string) ([]byte, error) {
 
 	// render pdf
 	var buf []byte
-	err := chromedp.Run(ctx,
+	err = chromedp.Run(ctx,
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			if data == "" {
 				return nil
@@ -358,8 +367,8 @@ func (p *Printer) Close() error {
 	// await exit
 	p.group.Wait()
 
-	// close socket
-	err1 := p.socket.Close()
+	// stop server
+	err1 := p.server.Stop()
 
 	// cancel context
 	err2 := chromedp.Cancel(p.context)

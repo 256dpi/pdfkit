@@ -22,18 +22,17 @@ func TestPrinterPrintURL(t *testing.T) {
 	printer, err := CreatePrinter(Config{
 		QueueSize:   1,
 		Concurrency: 1,
-		ServerReporter: func(err error) {
-			panic(err)
-		},
+		ServerPort:  1337,
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, printer)
 
-	defer printer.Close()
-
 	pdf, err := printer.PrintURL("https://sternenbauer.com", time.Minute)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, pdf)
+
+	err = printer.Close()
+	assert.NoError(t, err)
 
 	write("page.pdf", pdf)
 }
@@ -42,14 +41,10 @@ func TestPrinterPrintFile(t *testing.T) {
 	printer, err := CreatePrinter(Config{
 		QueueSize:   1,
 		Concurrency: 1,
-		ServerReporter: func(err error) {
-			panic(err)
-		},
+		ServerPort:  1337,
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, printer)
-
-	defer printer.Close()
 
 	pdf, err := printer.PrintFile([]byte(`
 		<html>
@@ -69,6 +64,9 @@ func TestPrinterPrintFile(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, pdf)
 
+	err = printer.Close()
+	assert.NoError(t, err)
+
 	write("file.pdf", pdf)
 }
 
@@ -78,14 +76,10 @@ func TestPrinterPrintFileAssets(t *testing.T) {
 	printer, err := CreatePrinter(Config{
 		QueueSize:   1,
 		Concurrency: 1,
-		ServerReporter: func(err error) {
-			panic(err)
-		},
+		ServerPort:  1337,
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, printer)
-
-	defer printer.Close()
 
 	file := []byte(`
 		<html>
@@ -113,6 +107,9 @@ func TestPrinterPrintFileAssets(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, pdf)
 
+	err = printer.Close()
+	assert.NoError(t, err)
+
 	write("assets.pdf", pdf)
 }
 
@@ -120,9 +117,7 @@ func BenchmarkPrinter(b *testing.B) {
 	printer, err := CreatePrinter(Config{
 		QueueSize:   runtime.GOMAXPROCS(0),
 		Concurrency: runtime.GOMAXPROCS(0),
-		ServerReporter: func(err error) {
-			panic(err)
-		},
+		ServerPort:  1337,
 	})
 	if err != nil {
 		panic(err)
