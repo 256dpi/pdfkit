@@ -29,6 +29,9 @@ var ErrQueueTimeout = errors.New("queue timeout")
 // ErrProcessTimeout is returned if a job timed out while processing.
 var ErrProcessTimeout = errors.New("process timeout")
 
+// ErrClosed is returned if the printer has been closed.
+var ErrClosed = errors.New("closed")
+
 // LogError may be returned if the processing failed due to a page error.
 type LogError struct {
 	Lines []string
@@ -66,6 +69,7 @@ type Printer struct {
 	addr    string
 	group   sync.WaitGroup
 	jobs    sync.Map
+	mutex   sync.Mutex
 }
 
 // CreatePrinter will create a new printer.
@@ -183,6 +187,16 @@ func (p *Printer) process(job *job) ([]byte, error) {
 
 	// set secret
 	job.secret = hex.EncodeToString(secret)
+
+	// get queue
+	p.mutex.Lock()
+	queue := p.queue
+	p.mutex.Unlock()
+
+	// check queue
+	if queue == nil {
+		return nil, ErrClosed
+	}
 
 	// queue job
 	select {
@@ -356,16 +370,35 @@ func (p *Printer) handler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(job.assets[path])
 }
 
-// Close will close the printer.
+// Close will close the printer. It will wait for currently processing jobs to
+// finish and cancels queued but not started jobs.
 func (p *Printer) Close() error {
+	// acquire mutex
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
+	// check queue
+	if p.queue == nil {
+		return ErrClosed
+	}
+
 	// ensure context cancel
 	defer p.cancel()
 
 	// close queue
 	close(p.queue)
 
+	// cancel jobs
+	for job := range p.queue {
+		job.error = ErrClosed
+		close(job.done)
+	}
+
 	// await exit
 	p.group.Wait()
+
+	// clear queue
+	p.queue = nil
 
 	// stop server
 	err1 := p.server.Stop()

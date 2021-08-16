@@ -113,6 +113,41 @@ func TestPrinterPrintFileAssets(t *testing.T) {
 	write("assets.pdf", pdf)
 }
 
+func TestPrinterClose(t *testing.T) {
+	printer, err := CreatePrinter(Config{
+		QueueSize:   1,
+		Concurrency: 1,
+		ServerPort:  1337,
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, printer)
+
+	done1 := make(chan struct{})
+	go func() {
+		pdf, err := printer.PrintURL("https://sternenbauer.com", time.Minute)
+		assert.NoError(t, err)
+		assert.NotEmpty(t, pdf)
+		close(done1)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	done2 := make(chan struct{})
+	go func() {
+		pdf, err := printer.PrintURL("https://sternenbauer.com", time.Minute)
+		assert.Error(t, err)
+		assert.Empty(t, pdf)
+		assert.Equal(t, ErrClosed, err)
+		close(done2)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	err = printer.Close()
+	assert.NoError(t, err)
+
+	<-done1
+	<-done2
+}
+
 func BenchmarkPrinter(b *testing.B) {
 	printer, err := CreatePrinter(Config{
 		QueueSize:   runtime.GOMAXPROCS(0),
