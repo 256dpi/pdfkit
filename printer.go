@@ -299,7 +299,7 @@ func (p *Printer) print(ctx context.Context, url, data string) ([]byte, error) {
 				Do(ctx)
 		}),
 		chromedp.Navigate(url),
-		chromedp.WaitVisible("body"),
+		chromedp.WaitReady("body"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
 			buf, _, err = page.PrintToPDF().
