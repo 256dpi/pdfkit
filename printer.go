@@ -57,6 +57,7 @@ type Config struct {
 	QueueSize   int
 	Concurrency int
 	ServerPort  int
+	Logger      func(interface{})
 }
 
 // Printer prints web pages as PDFs.
@@ -70,6 +71,7 @@ type Printer struct {
 	group   sync.WaitGroup
 	jobs    sync.Map
 	mutex   sync.Mutex
+	logger  func(interface{})
 }
 
 // CreatePrinter will create a new printer.
@@ -107,6 +109,7 @@ func CreatePrinter(config Config) (*Printer, error) {
 		cancel:  cancel,
 		addr:    "http://0.0.0.0:" + strconv.Itoa(config.ServerPort),
 		queue:   make(chan *job, config.QueueSize),
+		logger:  config.Logger,
 	}
 
 	// prepare server
@@ -262,9 +265,20 @@ func (p *Printer) print(ctx context.Context, url, data string) ([]byte, error) {
 		_ = chromedp.Cancel(ctx)
 	}()
 
+	// attach logger if available
+	if p.logger != nil {
+		chromedp.ListenBrowser(ctx, p.logger)
+	}
+
 	// collect errors
 	var logErrors []string
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
+		// log if available
+		if p.logger != nil {
+			p.logger(ev)
+		}
+
+		// check for errors
 		if ev, ok := ev.(*log.EventEntryAdded); ok {
 			if ev.Entry.Level == log.LevelError {
 				logErrors = append(logErrors, fmt.Sprintf("%s (%s)", ev.Entry.Text, ev.Entry.URL))
