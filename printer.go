@@ -191,6 +191,14 @@ func (p *Printer) process(job *job) ([]byte, error) {
 	// set secret
 	job.secret = hex.EncodeToString(secret)
 
+	// ensure favicon.ico
+	if job.assets == nil {
+		job.assets = map[string][]byte{}
+	}
+	if job.assets["favicon.ico"] == nil {
+		job.assets["favicon.ico"] = []byte("")
+	}
+
 	// get queue
 	p.mutex.Lock()
 	queue := p.queue
@@ -307,7 +315,7 @@ func (p *Printer) print(ctx context.Context, url, data string) ([]byte, error) {
 				WithDisplayHeaderFooter(false).
 				WithPrintBackground(true).
 				WithScale(1).
-				WithPaperWidth(8.27).   // A4 (210mm)
+				WithPaperWidth(8.27). // A4 (210mm)
 				WithPaperHeight(11.69). // A4 (297mm)
 				WithPreferCSSPageSize(true).
 				Do(ctx)
