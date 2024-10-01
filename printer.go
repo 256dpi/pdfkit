@@ -32,6 +32,13 @@ var ErrProcessTimeout = errors.New("process timeout")
 // ErrClosed is returned if the printer has been closed.
 var ErrClosed = errors.New("closed")
 
+var awaitFonts = `
+	(async function() {
+		await document.fonts.ready;
+		return true;
+	})();
+`
+
 // LogError may be returned if the processing failed due to a page error.
 type LogError struct {
 	Lines []string
@@ -308,6 +315,7 @@ func (p *Printer) print(ctx context.Context, url, data string) ([]byte, error) {
 		}),
 		chromedp.Navigate(url),
 		chromedp.WaitReady("body"),
+		chromedp.Evaluate(awaitFonts, nil),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
 			buf, _, err = page.PrintToPDF().
@@ -315,7 +323,7 @@ func (p *Printer) print(ctx context.Context, url, data string) ([]byte, error) {
 				WithDisplayHeaderFooter(false).
 				WithPrintBackground(true).
 				WithScale(1).
-				WithPaperWidth(8.27). // A4 (210mm)
+				WithPaperWidth(8.27).   // A4 (210mm)
 				WithPaperHeight(11.69). // A4 (297mm)
 				WithPreferCSSPageSize(true).
 				Do(ctx)
