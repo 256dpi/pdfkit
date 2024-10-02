@@ -20,6 +20,7 @@ import (
 	"github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -315,7 +316,9 @@ func (p *Printer) print(ctx context.Context, url, data string) ([]byte, error) {
 		}),
 		chromedp.Navigate(url),
 		chromedp.WaitReady("body"),
-		chromedp.Evaluate(awaitFonts, nil),
+		chromedp.Evaluate(awaitFonts, nil, func(params *runtime.EvaluateParams) *runtime.EvaluateParams {
+			return params.WithAwaitPromise(true)
+		}),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
 			buf, _, err = page.PrintToPDF().
