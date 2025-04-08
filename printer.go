@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/256dpi/aside"
@@ -70,7 +69,6 @@ type Config struct {
 
 // Printer prints web pages as PDFs.
 type Printer struct {
-	counter int64
 	context context.Context
 	cancel  func()
 	queue   chan *job
@@ -245,8 +243,8 @@ func (p *Printer) run() {
 			return
 		}
 
-		// get id
-		id := strconv.Itoa(int(atomic.AddInt64(&p.counter, 1)))
+		// read random ID
+		id := makeID()
 
 		// store job
 		p.jobs.Store(id, job)
@@ -275,7 +273,7 @@ func (p *Printer) print(ctx context.Context, url, data string) ([]byte, error) {
 	}
 
 	// create sub context
-	ctx, cancel := chromedp.NewContext(ctx)
+	ctx, cancel := chromedp.NewContext(ctx, chromedp.WithNewBrowserContext())
 	defer cancel()
 	defer func() {
 		_ = chromedp.Cancel(ctx)
@@ -447,4 +445,16 @@ func (p *Printer) Close() error {
 	}
 
 	return nil
+}
+
+func makeID() string {
+	// read random ID
+	id := make([]byte, 16)
+	_, err := rand.Read(id)
+	if err != nil {
+		panic(err)
+	}
+
+	// return hex
+	return hex.EncodeToString(id)
 }
