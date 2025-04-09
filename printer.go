@@ -65,6 +65,7 @@ type Config struct {
 	Concurrency int
 	ServerPort  int
 	Logger      func(interface{})
+	NoSandBox   bool
 }
 
 // Printer prints web pages as PDFs.
@@ -92,14 +93,25 @@ func CreatePrinter(config Config) (*Printer, error) {
 	}
 
 	// prepare context
-	ctx, cancel := chromedp.NewContext(context.Background())
+	ctx := context.Background()
+
+	// create allocator
+	execOpts := []chromedp.ExecAllocatorOption{chromedp.Headless}
+	if config.NoSandBox {
+		execOpts = append(execOpts, chromedp.NoSandbox)
+	}
+	ctx, cancel1 := chromedp.NewExecAllocator(ctx, execOpts...)
+
+	// wrap context context
+	ctx, cancel2 := chromedp.NewContext(ctx)
 
 	// ensure cleanup
 	var success bool
 	defer func() {
 		if !success {
 			_ = chromedp.Cancel(ctx)
-			cancel()
+			cancel2()
+			cancel1()
 		}
 	}()
 
@@ -112,10 +124,13 @@ func CreatePrinter(config Config) (*Printer, error) {
 	// prepare printer
 	p := &Printer{
 		context: ctx,
-		cancel:  cancel,
-		addr:    "http://0.0.0.0:" + strconv.Itoa(config.ServerPort),
-		queue:   make(chan *job, config.QueueSize),
-		logger:  config.Logger,
+		cancel: func() {
+			cancel2()
+			cancel1()
+		},
+		addr:   "http://0.0.0.0:" + strconv.Itoa(config.ServerPort),
+		queue:  make(chan *job, config.QueueSize),
+		logger: config.Logger,
 	}
 
 	// prepare server

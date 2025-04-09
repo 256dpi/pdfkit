@@ -12,6 +12,7 @@ import (
 )
 
 var pdfDir = flag.String("test.pdfDir", "", "")
+var noSandbox = flag.Bool("test.noSandbox", false, "disable sandbox mode for testing")
 
 func TestMain(m *testing.M) {
 	flag.Parse()
@@ -23,6 +24,7 @@ func TestPrinterPrintURL(t *testing.T) {
 		QueueSize:   1,
 		Concurrency: 1,
 		ServerPort:  1337,
+		NoSandBox:   *noSandbox,
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, printer)
@@ -42,6 +44,7 @@ func TestPrinterPrintFile(t *testing.T) {
 		QueueSize:   1,
 		Concurrency: 1,
 		ServerPort:  1337,
+		NoSandBox:   *noSandbox,
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, printer)
@@ -77,6 +80,7 @@ func TestPrinterPrintFileAssets(t *testing.T) {
 		QueueSize:   1,
 		Concurrency: 1,
 		ServerPort:  1337,
+		NoSandBox:   *noSandbox,
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, printer)
@@ -118,6 +122,7 @@ func TestPrinterClose(t *testing.T) {
 		QueueSize:   1,
 		Concurrency: 1,
 		ServerPort:  1337,
+		NoSandBox:   *noSandbox,
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, printer)
@@ -159,6 +164,7 @@ func BenchmarkPrinter(b *testing.B) {
 		QueueSize:   runtime.GOMAXPROCS(0),
 		Concurrency: runtime.GOMAXPROCS(0),
 		ServerPort:  1337,
+		NoSandBox:   *noSandbox,
 	})
 	if err != nil {
 		panic(err)
