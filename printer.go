@@ -97,8 +97,9 @@ func CreatePrinter(config Config) (*Printer, error) {
 	// prepare context
 	ctx := context.Background()
 
-	// create allocator
-	execOpts := []chromedp.ExecAllocatorOption{chromedp.Headless}
+	// create allocator, the default options run headless and include flags
+	// needed in containers, e.g. to not rely on a large shared memory
+	execOpts := chromedp.DefaultExecAllocatorOptions[:]
 	if config.NoSandBox {
 		execOpts = append(execOpts, chromedp.NoSandbox)
 	}
