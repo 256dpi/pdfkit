@@ -16,10 +16,12 @@ import (
 
 	"github.com/256dpi/aside"
 	"github.com/256dpi/serve"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
 
@@ -287,8 +289,29 @@ func (p *Printer) print(ctx context.Context, url, data string) ([]byte, error) {
 		return nil, err
 	}
 
+	// create a browser context, disposed using the printer context so that it
+	// is also disposed if the job timed out
+	browser := chromedp.FromContext(p.context).Browser
+	browserContext, err := target.CreateBrowserContext().WithDisposeOnDetach(true).Do(cdp.WithExecutor(ctx, browser))
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = target.DisposeBrowserContext(browserContext).Do(cdp.WithExecutor(p.context, browser))
+	}()
+
+	// create target in a new window, browsers do not open a tab in a new
+	// browser context that has no window
+	targetID, err := target.CreateTarget("about:blank").
+		WithBrowserContextID(browserContext).
+		WithNewWindow(true).
+		Do(cdp.WithExecutor(ctx, browser))
+	if err != nil {
+		return nil, err
+	}
+
 	// create sub context
-	ctx, cancel := chromedp.NewContext(ctx, chromedp.WithNewBrowserContext())
+	ctx, cancel := chromedp.NewContext(ctx, chromedp.WithTargetID(targetID))
 	defer cancel()
 	defer func() {
 		_ = chromedp.Cancel(ctx)
